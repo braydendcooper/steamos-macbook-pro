@@ -1,0 +1,58 @@
+From 2399a676e851ec06288f61cefe04b9b077aff265 Mon Sep 17 00:00:00 2001
+From: ufdmedia <247953355+ufdmedia@users.noreply.github.com>
+Date: Thu, 5 Nov 2026 00:00:00 +0000
+Subject: [PATCH 2/2] arm64: dts: apple: t8140: add the debug UART (uart0) for
+ j700
+
+The USB-C debug serial mode carries ADT /arm-io/uart0 (m1n1 prints
+there). Aurora only describes the dockchannel UART, so neither U-Boot
+nor Linux had a console on the debug link. Node from Yureka Lilian's
+T8140 device tree.
+---
+ arch/arm64/boot/dts/apple/t8140-j700.dts |  4 ++++
+ arch/arm64/boot/dts/apple/t8140.dtsi     | 14 ++++++++++++++
+ 2 files changed, 18 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/apple/t8140-j700.dts b/arch/arm64/boot/dts/apple/t8140-j700.dts
+index a97432da3..84d5d5b97 100644
+--- a/arch/arm64/boot/dts/apple/t8140-j700.dts
++++ b/arch/arm64/boot/dts/apple/t8140-j700.dts
+@@ -392,6 +392,10 @@ &serial0 {
+ 	status = "okay";
+ };
+ 
++&uart0 {
++	status = "okay";
++};
++
+ &pmp_dart {
+ 	status = "okay";
+ };
+diff --git a/arch/arm64/boot/dts/apple/t8140.dtsi b/arch/arm64/boot/dts/apple/t8140.dtsi
+index bc008518b..5b55cb2d0 100644
+--- a/arch/arm64/boot/dts/apple/t8140.dtsi
++++ b/arch/arm64/boot/dts/apple/t8140.dtsi
+@@ -1384,6 +1384,20 @@ spi2: spi@385108000 {
+ 			status = "disabled";
+ 		};
+ 
++		/* Debug UART carried by USB-C debug serial mode (ADT /arm-io/uart0, used by m1n1).
++		 * Node taken from Yureka Lilian's T8140 device tree. */
++		uart0: serial@385200000 {
++			compatible = "apple,s5l-uart";
++			reg = <0x3 0x85200000 0x0 0x1000>;
++			clocks = <&clkref>, <&clkref>;
++			clock-names = "uart", "clk_uart_baud0";
++			interrupt-parent = <&aic>;
++			interrupts = <AIC_IRQ 1092 IRQ_TYPE_LEVEL_HIGH>;
++			power-domains = <&ps_uart0>;
++			reg-io-width = <4>;
++			status = "disabled";
++		};
++
+ 		serial0: serial@30812c000 {
+ 			compatible = "apple,dockchannel-uart";
+ 			reg = <0x3 0x0812c000 0x0 0x4000>,
+-- 
+2.47.3
+

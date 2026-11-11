@@ -1,0 +1,32 @@
+{
+  "os_list": [
+    {
+      "name": "SteamOS for MacBook Neo (unofficial, experimental)",
+      "default_os_name": "SteamOS",
+      "boot_object": "m1n1.bin",
+      "next_object": "m1n1/boot.bin",
+      "package": "steamos-neo.zip",
+      "supported_fw": ["26.6.2"],
+      "extras": [],
+      "partitions": [
+        {
+          "name": "EFI",
+          "type": "EFI",
+          "size": "524288000B",
+          "format": "fat",
+          "copy_firmware": true,
+          "copy_installer_data": true,
+          "source": "esp",
+          "steamos": "esp"
+        },
+        {"name": "efi-A", "type": "EFI", "size": "536870912B", "format": "fat", "source": "efi", "steamos": "efi-A"},
+        {"name": "rootfs-A", "type": "Linux", "size": "10737418240B", "image": "rootfs.img", "steamos": "rootfs-A"},
+        {"name": "var-A", "type": "Linux", "size": "268435456B", "image": "var.img", "steamos": "var-A"},
+        {"name": "efi-B", "type": "EFI", "size": "536870912B", "format": "fat", "steamos": "efi-B"},
+        {"name": "rootfs-B", "type": "Linux", "size": "10737418240B", "steamos": "rootfs-B"},
+        {"name": "var-B", "type": "Linux", "size": "268435456B", "image": "var.img", "steamos": "var-B"},
+        {"name": "home", "type": "Linux", "size": "104857600B", "image": "home.img", "expand": true, "steamos": "home"}
+      ]
+    }
+  ]
+}

@@ -1,0 +1,41 @@
+#!/bin/bash
+
+# Read only this plain KEY=value setting; never execute configuration as code.
+host=kwin
+if [[ -r /etc/steamos-neo/session.conf ]]; then
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        if [[ "$line" =~ ^[[:space:]]*NEO_GAME_MODE_HOST[[:space:]]*=[[:space:]]*(.*)$ ]]; then
+            host=${BASH_REMATCH[1]}
+            host=${host%"${host##*[![:space:]]}"}
+        fi
+    done < /etc/steamos-neo/session.conf
+fi
+
+case "$host" in
+    drm) exec start-gamescope-session gamescope-session.target ;;
+    kwin) ;;
+    *) echo "game-mode-session: unknown NEO_GAME_MODE_HOST '$host'; using kwin" >&2 ;;
+esac
+
+# This KWin keeps its settings (the window rule below and a 1x output scale for
+# gamescope) out of the user's ~/.config, which Plasma uses. game-mode-nested
+# restores the user's directories before gamescope and Steam start.
+# The user's directory stays in the search path after ours, so touchpad and
+# keyboard settings made in Plasma still apply.
+export NEO_USER_XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-}"
+export NEO_USER_XDG_CONFIG_DIRS="${XDG_CONFIG_DIRS:-}"
+kwin_config="${XDG_STATE_HOME:-$HOME/.local/state}/steamos-neo/kwin-game-mode"
+if ! mkdir -p "$kwin_config" ||
+    ! install -m 644 /usr/share/steamos-neo/kwin-game-mode/kwinoutputconfig.json "$kwin_config/"; then
+    echo "game-mode-session: could not prepare $kwin_config; KWin will choose its own output scale" >&2
+fi
+
+user_config="${XDG_CONFIG_HOME:-$HOME/.config}"
+
+# Direct scanout hands gamescope's buffers straight to the display. On the Neo's
+# split GPU/display this showed tearing and stale frames flashing back;
+# compositing every frame made it much smoother.
+# This KWin instance only ever hosts gamescope. Its SDL window otherwise became
+# a decorated window about 80% of the screen; the window rule makes it fullscreen.
+KWIN_DRM_NO_DIRECT_SCANOUT=1 XDG_CONFIG_HOME="$kwin_config" XDG_CONFIG_DIRS="/usr/share/steamos-neo/kwin-game-mode:$user_config:${XDG_CONFIG_DIRS:-/etc/xdg}" exec kwin_wayland --drm --no-lockscreen --no-global-shortcuts --no-kactivities \
+    --socket neo-host-0 --exit-with-session=/usr/lib/steamos-neo/game-mode-nested

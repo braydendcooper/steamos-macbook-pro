@@ -1,0 +1,83 @@
+# syntax=docker/dockerfile:1
+# Build natively on arm64; do not substitute a newer Ubuntu/glibc base.
+FROM --platform=linux/arm64 ubuntu:24.04
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG MESON_VERSION=1.9.1
+ARG RUST_VERSION=1.90.0
+# Supply the SHA256 of the independently obtained libdrm source tarball.
+ARG LIBDRM_SHA256
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      build-essential binutils ca-certificates curl git pkg-config \
+      python3 python3-venv python3-pip python3-mako python3-ply \
+      python3-yaml python3-pycparser python3-packaging \
+      bison flex ninja-build xz-utils zstd \
+      llvm-19-dev clang-19 libclang-19-dev libclc-19-dev libclc-19 \
+      libllvmspirvlib-19-dev llvm-spirv-19 spirv-tools glslang-tools \
+      libdrm-dev libexpat1-dev zlib1g-dev libzstd-dev libelf-dev \
+      libwayland-dev libwayland-egl-backend-dev wayland-protocols \
+      libx11-dev libx11-xcb-dev libxcb1-dev libxcb-dri2-0-dev \
+      libxcb-dri3-dev libxcb-present-dev libxcb-sync-dev libxcb-glx0-dev \
+      libxcb-randr0-dev libxcb-shm0-dev libxcb-xfixes0-dev \
+      libxcb-keysyms1-dev libxext-dev libxfixes-dev libxrandr-dev \
+      libxshmfence-dev libxxf86vm-dev libxrender-dev \
+      libglvnd-dev libvulkan-dev libsensors-dev libdisplay-info-dev \
+      libsystemd-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Keep Ubuntu's Python generators visible without modifying system Python.
+RUN python3 -m venv --system-site-packages /opt/mesa-venv \
+    && /opt/mesa-venv/bin/pip install --no-cache-dir "meson==${MESON_VERSION}"
+
+# Mesa's Asahi compiler uses Rust even with rusticl disabled. Noble's original
+# Rust is too old for contemporary Mesa. This download happens only when the
+# operator builds the image, never when writing/generating this recipe.
+RUN curl --fail --location --retry 3 \
+      "https://static.rust-lang.org/dist/rust-${RUST_VERSION}-aarch64-unknown-linux-gnu.tar.xz" \
+      -o /tmp/rust.tar.xz \
+    && curl --fail --location --retry 3 \
+      "https://static.rust-lang.org/dist/rust-${RUST_VERSION}-aarch64-unknown-linux-gnu.tar.xz.sha256" \
+      -o /tmp/rust.sha256 \
+    && cd /tmp \
+    && sed "s@rust-${RUST_VERSION}-aarch64-unknown-linux-gnu.tar.xz@rust.tar.xz@" rust.sha256 \
+       | sha256sum --check - \
+    && tar -xJf rust.tar.xz \
+    && ./rust-${RUST_VERSION}-aarch64-unknown-linux-gnu/install.sh \
+       --prefix=/opt/rust --disable-ldconfig --without=rust-docs \
+    && rm -rf /tmp/rust*
+
+ENV PATH="/opt/mesa-venv/bin:/opt/cargo/bin:/opt/rust/bin:/usr/lib/llvm-19/bin:${PATH}" \
+    CARGO_HOME=/opt/cargo \
+    CC=clang-19 CXX=clang++-19 LLVM_CONFIG=llvm-config-19 \
+    LIBCLANG_PATH=/usr/lib/llvm-19/lib \
+    SOURCE_DATE_EPOCH=1793404800
+
+# Pin the Rust binding generators too; Noble's bindgen predates this Mesa.
+RUN cargo install --locked bindgen-cli --version 0.72.1 \
+    && cargo install --locked cbindgen --version 0.29.2
+
+# Build context must contain exactly one deps/libdrm-*.tar.xz, version >=2.4.124.
+# Do not replace the container's system libdrm or copy this prefix into the root.
+COPY deps/libdrm-*.tar.xz /src/deps/
+RUN set -eu; \
+    set -- /src/deps/libdrm-*.tar.xz; \
+    test "$#" -eq 1; \
+    test -n "$LIBDRM_SHA256"; \
+    printf '%s  %s\n' "$LIBDRM_SHA256" "$1" | sha256sum --check -; \
+    mkdir -p /tmp/libdrm-src; \
+    tar -xJf "$1" --strip-components=1 -C /tmp/libdrm-src; \
+    meson setup /tmp/libdrm-build /tmp/libdrm-src \
+      --prefix=/opt/libdrm --libdir=lib --buildtype=release --wrap-mode=nodownload \
+      -Dtests=false; \
+    ninja -C /tmp/libdrm-build; \
+    ninja -C /tmp/libdrm-build install; \
+    PKG_CONFIG_PATH=/opt/libdrm/lib/pkgconfig pkg-config --atleast-version=2.4.124 libdrm; \
+    rm -rf /tmp/libdrm-src /tmp/libdrm-build
+
+# LD_LIBRARY_PATH is container-only: shader tools may use the private libdrm.
+# No RPATH to this prefix is allowed in the final installed Mesa ELF files.
+ENV PKG_CONFIG_PATH=/opt/libdrm/lib/pkgconfig \
+    LD_LIBRARY_PATH=/opt/libdrm/lib
+WORKDIR /src/aurora/mesa
+CMD ["bash"]

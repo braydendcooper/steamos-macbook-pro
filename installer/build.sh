@@ -1,0 +1,202 @@
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+
+set -e
+
+cd "$(dirname "$0")"
+
+PYTHON_VER=3.13.9
+PYTHON_PKG=python-$PYTHON_VER-macos11.pkg
+PYTHON_URI="https://www.python.org/ftp/python/$PYTHON_VER/$PYTHON_PKG"
+
+LIBFFI_VER=3.5.2
+LIBFFI_MANIFEST_URI="https://ghcr.io/v2/homebrew/core/libffi/manifests/$LIBFFI_VER"
+LIBFFI_BASE_URI="https://ghcr.io/v2/homebrew/core/libffi/blobs"
+LIBFFI_TARGET_OS="macOS 26"
+LIBFFI_PKG="libffi-$LIBFFI_VER-macos.tar.gz"
+
+M1N1="$PWD/bootloader"
+ARTWORK="$PWD/artwork"
+FIRMWARE_TOOLS="$PWD/gravity_firmware"
+SRC="$PWD/src"
+DL="$PWD/dl"
+PACKAGE="$PWD/package"
+RELEASES="$PWD/releases"
+RELEASES_DEV="$PWD/releases-dev"
+
+if [ -n "$M1N1_STAGE1" ]; then
+    if [ ! -r "$M1N1_STAGE1" ]; then
+        echo "M1N1_STAGE1 must point to a readable m1n1.bin file."
+        exit 1
+    fi
+elif [ ! -r "$M1N1/Makefile" ]; then
+    echo "Bootloader submodule missing or empty. Set M1N1_STAGE1 to a m1n1.bin file."
+    exit 1
+fi
+
+HAVE_ARTWORK=0
+if [ -r "$ARTWORK/LICENSE" ]; then
+    HAVE_ARTWORK=1
+fi
+
+if [ -n "$LOGO" ]; then
+    if [ ! -r "$LOGO" ]; then
+        echo "LOGO must point to a readable logo.icns file."
+        exit 1
+    fi
+elif [ "$HAVE_ARTWORK" = 0 ]; then
+    echo "Artwork submodule missing or empty. Set LOGO to a logo.icns file."
+    exit 1
+fi
+
+rm -rf "$PACKAGE"
+
+mkdir -p "$DL" "$PACKAGE" "$RELEASES" "$RELEASES_DEV"
+mkdir -p "$PACKAGE/bin"
+
+echo "Determining version..."
+
+[ -d .git ] && VER=$(git describe --always --dirty --tags)
+
+if [ -z "$VER" ]; then
+    if [ -e version.tag ]; then
+        VER="$(cat version.tag)"
+    else
+        echo "Could not determine version!"
+        exit 1
+    fi
+fi
+
+echo "Version: $VER"
+
+echo "Downloading installer components..."
+
+cd "$DL"
+
+echo " - Python"
+
+if [ -e "$PYTHON_PKG" ]; then
+    echo "Using existing $PYTHON_PKG"
+else
+    wget -Nc "$PYTHON_URI"
+fi
+
+echo " - libffi"
+
+if [ -e "$LIBFFI_PKG" ]; then
+    echo "Using existing $LIBFFI_PKG"
+else
+    # get a JSON with an anonymous token
+    token=$(curl -s "https://ghcr.io/token?service=ghcr.io&scope=repository%3Ahomebrew/core/go%3Apull" | jq -jr ".token")
+
+    digest=$( \
+        curl -s \
+        -H "Authorization: Bearer ${token}" \
+        -H 'Accept: application/vnd.oci.image.index.v1+json' \
+        $LIBFFI_MANIFEST_URI \
+        | jq -r '[.manifests[] |
+                select(.platform.architecture == "arm64"
+                and .platform."os.version" == "'"$LIBFFI_TARGET_OS"'")
+            ] | first | .annotations."sh.brew.bottle.digest"' \
+    )
+
+    curl -L -o "$LIBFFI_PKG" \
+        -H "Authorization: Bearer ${token}" \
+        -H 'Accept: application/vnd.oci.image.index.v1+json' \
+        "$LIBFFI_BASE_URI/sha256:$digest"
+fi
+
+if [ -r "$M1N1_STAGE1" ]; then
+    echo "Using '$M1N1_STAGE1' as m1n1 stage1"
+else
+    echo "Building m1n1..."
+    BUILT_STAGE1=1
+
+    # Match the RPM configuration: the M4 DCP iBoot interface is not supported.
+    # Do it twice in case of build system shenanigans with versions.
+    make -C "$M1N1" RELEASE=1 CHAINLOADING=1 NO_DISPLAY=1 -j4
+    make -C "$M1N1" RELEASE=1 CHAINLOADING=1 NO_DISPLAY=1 -j4
+
+    M1N1_STAGE1="$M1N1/build/m1n1.bin"
+fi
+
+echo "Copying files..."
+
+cp -r "$SRC"/* "$PACKAGE/"
+rm -f "$PACKAGE/gravity_firmware"
+cp -r "$FIRMWARE_TOOLS" "$PACKAGE/"
+if [ "$HAVE_ARTWORK" = 1 ]; then
+    mkdir -p "$PACKAGE/licenses/gravity-artwork"
+    cp "$ARTWORK/LICENSE" "$ARTWORK/README.md" "$ARTWORK/TRADEMARKS.md" \
+       "$PACKAGE/licenses/gravity-artwork/"
+fi
+if [ -r "$LOGO" ]; then
+    cp "$LOGO" "$PACKAGE/logo.icns"
+else
+    cp "$ARTWORK/logos/icns/GravityLinux_logomark.icns" "$PACKAGE/logo.icns"
+fi
+mkdir -p "$PACKAGE/boot"
+cp "$M1N1_STAGE1" "$PACKAGE/boot/m1n1.bin"
+
+# Match m1n1's custom-logo payload format without modifying its source tree.
+# A supplied M1N1_STAGE1 (for example from the RPM) is already branded.
+if [ "${BUILT_STAGE1:-0}" = 1 ] && [ "$HAVE_ARTWORK" = 1 ]; then
+    sh "$SRC/../tools/append-boot-logo.sh" "$PACKAGE/boot/m1n1.bin" "$ARTWORK"
+fi
+
+echo "Extracting libffi..."
+
+cd "$PACKAGE"
+tar xf "$DL/$LIBFFI_PKG"
+
+echo "Extracting Python framework..."
+
+mkdir -p "$PACKAGE/Frameworks/Python.framework"
+
+# test if libarchive's bsdtar is capable of extracting the payload
+# libarchive 3.7.2 (Ubuntu 24.04) is broken while 3.8.5 (Ubuntu 26.04) works
+if $(bsdtar -tf "$DL/$PYTHON_PKG" Python_Framework.pkg/Payload > /dev/null); then
+    bsdtar -xOf "$DL/$PYTHON_PKG" Python_Framework.pkg/Payload | zcat | \
+        cpio -i -D "$PACKAGE/Frameworks/Python.framework"
+else
+    7z x -so "$DL/$PYTHON_PKG" Python_Framework.pkg/Payload | zcat | \
+        cpio -i -D "$PACKAGE/Frameworks/Python.framework"
+fi
+
+cd "$PACKAGE/Frameworks/Python.framework/Versions/Current"
+
+echo "Moving in libffi..."
+
+mv "$PACKAGE/libffi/$LIBFFI_VER/lib/"libffi*.dylib lib/
+rm -rf "$PACKAGE/libffi"
+
+echo "Slimming down Python..."
+
+rm -rf include share
+cd lib
+rm -rf -- tdb* tk* Tk* libtk* *tcl*
+cd python3.*
+rm -rf test ensurepip idlelib
+cd lib-dynload
+rm -f _test* _tkinter*
+    
+
+echo "Copying certificates..."
+
+certs="$(python3 -c 'import certifi; print(certifi.where())')"
+cp "$certs" "$PACKAGE/Frameworks/Python.framework/Versions/Current/etc/openssl/cert.pem"
+
+echo "Packaging installer..."
+
+cd "$PACKAGE"
+
+echo "$VER" > version.tag
+
+PKGFILE="$RELEASES/installer-$VER.tar.gz"
+LATEST="$RELEASES/latest"
+
+tar czf "$PKGFILE" .
+echo "$VER" > "$LATEST"
+
+echo
+echo "Built package: $(basename "$PKGFILE")"

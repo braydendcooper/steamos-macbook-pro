@@ -1,0 +1,124 @@
+#!/usr/bin/python3
+"""Enable native Steam UI resolution on gamescope's external-looking display.
+
+This avoids a letterboxed 1080p UI on the Neo panel. Run once; later choices
+belong to Steam.
+"""
+
+import os
+from pathlib import Path
+import re
+import stat
+import sys
+import tempfile
+
+
+class Block:
+    def __init__(self, children, close):
+        self.children = children
+        self.close = close
+
+    def get(self, key):
+        return next((v for k, v in self.children if k.casefold() == key.casefold()), None)
+
+
+def parse(text):
+    pattern = re.compile(r'\s+|//[^\n]*|"(?:\\[\s\S]|[^"\\])*"|[{}]')
+    tokens = []
+    pos = 0
+    while pos < len(text):
+        match = pattern.match(text, pos)
+        if match is None:
+            raise ValueError(f"invalid token at offset {pos}")
+        token = match.group()
+        if token.startswith('"'):
+            value = re.sub(r'\\([\s\S])', r'\1', token[1:-1])
+            tokens.append(('string', value, pos))
+        elif token in ('{', '}'):
+            tokens.append((token, token, pos))
+        pos = match.end()
+    stream = iter(tokens)
+
+    def take():
+        return next(stream, ('end', '', len(text)))
+
+    def value(token):
+        if token[0] == 'string':
+            return token[1]
+        if token[0] != '{':
+            raise ValueError("key without a value")
+        children = []
+        while True:
+            key = take()
+            if key[0] == '}':
+                return Block(children, key[2])
+            if key[0] != 'string':
+                raise ValueError("unbalanced braces or missing key")
+            children.append((key[1], value(take())))
+
+    key = take()
+    if key[0] != 'string' or key[1].casefold() != 'installconfigstore':
+        raise ValueError("root must be InstallConfigStore")
+    root = value(take())
+    if not isinstance(root, Block) or take()[0] != 'end':
+        raise ValueError("root must be a single block")
+    return root
+
+
+def insert(text, close, lines):
+    start = text.rfind('\n', 0, close) + 1
+    if text[start:close].strip():
+        return text[:close] + '\n' + lines + text[close:]
+    return text[:start] + lines + text[start:]
+
+
+def atomic_write(config, text):
+    mode = stat.S_IMODE(config.stat().st_mode) if config.exists() else 0o644
+    config.parent.mkdir(parents=True, exist_ok=True)
+    fd, name = tempfile.mkstemp(dir=config.parent, prefix='.config.vdf.')
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8', newline='') as output:
+            output.write(text)
+            output.flush()
+            os.fsync(output.fileno())
+            os.fchmod(output.fileno(), mode)
+        os.replace(name, config)
+    finally:
+        if os.path.exists(name):
+            os.unlink(name)
+
+
+def main():
+    steam_root = Path.home() / '.local/share/Steam'
+    config = steam_root / 'config/config.vdf'
+    marker = config.with_name('neo-native-resolution-initialized')
+    try:
+        if marker.exists() or not steam_root.exists():
+            return 0
+        if config.exists():
+            with config.open(encoding='utf-8', newline='') as source:
+                text = source.read()
+        else:
+            text = '"InstallConfigStore"\n{\n}\n'
+        root = parse(text)
+        gamescope = root.get('Gamescope')
+        if gamescope is not None and not isinstance(gamescope, Block):
+            raise ValueError("Gamescope must be a block")
+        added = gamescope is None or gamescope.get('EnableSteamNativeExternalResolution') is None
+        if added:
+            lines = '\t\t"EnableSteamNativeExternalResolution"\t\t"1"\n'
+            if gamescope is None:
+                lines = '\t"Gamescope"\n\t{\n' + lines + '\t}\n'
+            text = insert(text, gamescope.close if gamescope else root.close, lines)
+            atomic_write(config, text)
+        marker.write_text('1\n', encoding='utf-8')
+        if added:
+            print('steam-display-defaults: enabled native resolution for the Steam UI')
+        return 0
+    except (OSError, ValueError) as error:
+        print(f'steam-display-defaults: left config.vdf unchanged: {error}', file=sys.stderr)
+        return 1
+
+
+if __name__ == '__main__':
+    sys.exit(main())

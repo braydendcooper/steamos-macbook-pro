@@ -1,0 +1,15 @@
+# Derived from Valve deckard-steamvr-session 1.7.0 (MIT).
+[Unit]
+Description=Gamescope Session
+Requires=graphical-session.target
+BindsTo=graphical-session.target
+After=graphical-session.target
+PropagatesStopTo=graphical-session.target
+
+Requires=gamescope-session.service
+BindsTo=gamescope-session.service
+
+Wants=steamos-powerbuttond.service
+Wants=steam.service
+Wants=steam-notif-daemon.service
+Wants=ibus-gamescope.service

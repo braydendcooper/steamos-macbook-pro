@@ -1,0 +1,62 @@
+From 0fc2e3d783ea58faa63ff297e5092be674914f3c Mon Sep 17 00:00:00 2001
+From: ufdmedia <247953355+ufdmedia@users.noreply.github.com>
+Date: Fri, 2 Oct 2026 00:00:00 +0000
+Subject: [PATCH] pmgr: make sure a reset device actually leaves reset
+
+pmgr_reset_device() released RESET and DEV_DISABLE with back-to-back
+read-modify-writes. On T8140 (MacBook Neo) that left ANS in reset after
+stage 1's NVMe read burst (PS reg 0x8f0020ff, bit 31 set): the second
+read still saw RESET and wrote it back. Stage 2 and U-Boot then hung on
+their first SART access, since the SART sits under ANS.
+
+Confirm RESET reads back clear (re-issuing the deassert if needed, with
+a timeout), and clear DEV_DISABLE with a write that keeps RESET clear.
+Tested by chainloading the stage 1 object from the proxy: the old build
+left ANS in reset (1/1), the fixed one released it every time (3/3).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/pmgr.c | 27 +++++++++++++++++++++++++--
+ 1 file changed, 25 insertions(+), 2 deletions(-)
+
+diff --git a/src/pmgr.c b/src/pmgr.c
+index dd04771..b663f50 100644
+--- a/src/pmgr.c
++++ b/src/pmgr.c
+@@ -582,8 +582,31 @@ static int pmgr_reset_device(int die, const struct pmgr_device *dev)
+     set32(addr, PMGR_DEV_DISABLE);
+     set32(addr, PMGR_RESET);
+     udelay(10);
+-    clear32(addr, PMGR_RESET);
+-    clear32(addr, PMGR_DEV_DISABLE);
++
++    /*
++     * Releasing RESET and DEV_DISABLE with back-to-back read-modify-writes left ANS in reset on
++     * T8140 (MacBook Neo) after stage 1's NVMe read burst: the second read could still see RESET
++     * and wrote it back. Confirm RESET reads back clear (re-issuing it if needed), and never
++     * write RESET again when clearing DEV_DISABLE.
++     */
++    u64 timeout = timeout_calculate(PMGR_POLL_TIMEOUT);
++    u32 tries = 0;
++    do {
++        clear32(addr, PMGR_RESET);
++        tries++;
++        if (!(read32(addr) & PMGR_RESET))
++            break;
++        udelay(1);
++    } while (!timeout_expired(timeout));
++
++    if (read32(addr) & PMGR_RESET) {
++        printf("pmgr: device %d.%s did not leave reset\n", die, dev->name);
++        return -1;
++    }
++    if (tries > 1)
++        printf("pmgr: device %d.%s left reset after %u deasserts\n", die, dev->name, tries);
++
++    mask32(addr, PMGR_RESET | PMGR_DEV_DISABLE, 0);
+ 
+     return 0;
+ }
+-- 
+2.47.3
+

@@ -1,0 +1,13 @@
+pkgname=aurora-userpages
+pkgver=7.2.11
+pkgrel=1
+pkgdesc='Aurora per-process page-size launcher'
+arch=(aarch64)
+license=(GPL-2.0-only)
+options=(!strip !debug)
+source=()
+sha256sums=()
+
+package() {
+    install -Dm755 "$startdir/userpages" "$pkgdir/usr/bin/aurora-userpages"
+}

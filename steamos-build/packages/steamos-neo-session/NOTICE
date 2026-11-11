@@ -1,0 +1,5 @@
+Files marked 'Derived' come from Valve's deckard-steamvr-session 1.7.0 (MIT).
+The Steam service drop-in extends Valve's deckard-steam-rel steam.service unit
+and copies none of its lines.
+The power button override is based on Valve's steamos-powerbuttond unit
+(BSD-2-Clause); its notice is in LICENSE.steamos-powerbuttond.

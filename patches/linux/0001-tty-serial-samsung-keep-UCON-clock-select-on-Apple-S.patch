@@ -1,0 +1,28 @@
+From b705c8d10759d5de710877e3ae808f60443940e5 Mon Sep 17 00:00:00 2001
+From: ufdmedia <247953355+ufdmedia@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 00:00:00 +0000
+Subject: [PATCH 1/2] tty: serial: samsung: keep UCON clock select on Apple S5L
+ (A18 Pro)
+
+---
+ include/linux/serial_s3c.h | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/include/linux/serial_s3c.h b/include/linux/serial_s3c.h
+index 102aa33d9..3dae200d3 100644
+--- a/include/linux/serial_s3c.h
++++ b/include/linux/serial_s3c.h
+@@ -258,7 +258,9 @@
+ #define APPLE_S5L_UCON_DEFAULT		(S3C2410_UCON_TXIRQMODE | \
+ 					 S3C2410_UCON_RXIRQMODE | \
+ 					 S3C2410_UCON_RXFIFO_TOI)
+-#define APPLE_S5L_UCON_MASK		(APPLE_S5L_UCON_RXTO_ENA_MSK | \
++/* Keep the firmware's clock select: the A18 Pro UART runs from UCLK (bit 10) */
++#define APPLE_S5L_UCON_MASK		(S3C2410_UCON_CLKMASK | \
++					 APPLE_S5L_UCON_RXTO_ENA_MSK | \
+ 					 APPLE_S5L_UCON_RXTO_LEGACY_ENA_MSK | \
+ 					 APPLE_S5L_UCON_RXTHRESH_ENA_MSK | \
+ 					 APPLE_S5L_UCON_TXTHRESH_ENA_MSK)
+-- 
+2.47.3
+

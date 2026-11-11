@@ -1,0 +1,14 @@
+pkgname=alsa-ucm-conf-aurora
+pkgver=10.aurora3
+pkgrel=1
+pkgdesc='Aurora Apple Silicon ALSA UCM profiles including J700'
+arch=(any)
+license=('BSD-3-Clause')
+options=(!strip !debug)
+# Payload is built externally against Ubuntu 24.04 / glibc 2.39.
+source=()
+sha256sums=()
+
+package() {
+    cp -a "$startdir/stage/." "$pkgdir/"
+}

@@ -1,0 +1,11 @@
+# Override of Valve's steamos-powerbuttond user unit (BSD-2-Clause; see
+# /usr/share/licenses/steamos-neo-session/LICENSE.steamos-powerbuttond).
+[Unit]
+Description=Power Button daemon for SteamOS
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+ExecStart=/usr/lib/hwsupport/steamos-powerbuttond
+Restart=on-failure
+Slice=session.slice

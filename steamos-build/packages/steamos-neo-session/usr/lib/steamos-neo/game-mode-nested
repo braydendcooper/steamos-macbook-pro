@@ -1,0 +1,25 @@
+#!/bin/bash
+
+# Undo game-mode-session's KWin-only XDG_CONFIG_HOME and XDG_CONFIG_DIRS. Values
+# that were unset are also removed from the systemd user manager, so a value
+# from an earlier Game Mode cannot outlive it.
+for var in XDG_CONFIG_HOME XDG_CONFIG_DIRS; do
+  saved="NEO_USER_$var"
+  if [[ -n "${!saved:-}" ]]; then
+    export "$var=${!saved}"
+  else
+    unset "$var"
+    systemctl --user unset-environment "$var"
+  fi
+  unset "$saved"
+done
+
+# Keep the KWin socket separate from the environment gamescope-cleanup clears.
+export NEO_HOST_WAYLAND_DISPLAY="$WAYLAND_DISPLAY"
+systemctl --user set-environment "NEO_HOST_WAYLAND_DISPLAY=$NEO_HOST_WAYLAND_DISPLAY"
+dbus-update-activation-environment --systemd NEO_HOST_WAYLAND_DISPLAY
+
+start-gamescope-session gamescope-session.target
+status=$?
+systemctl --user unset-environment NEO_HOST_WAYLAND_DISPLAY
+exit "$status"

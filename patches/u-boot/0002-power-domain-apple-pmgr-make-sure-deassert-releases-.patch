@@ -1,0 +1,68 @@
+From b6361cd5af99911f97d1bc6aa9e982704a90223c Mon Sep 17 00:00:00 2001
+From: ufdmedia <247953355+ufdmedia@users.noreply.github.com>
+Date: Tue, 3 Nov 2026 00:00:00 +0000
+Subject: [PATCH 2/2] power: domain: apple-pmgr: make sure deassert releases
+ the reset
+
+Back-to-back read-modify-writes of RESET and DEV_DISABLE left ANS in reset on the MacBook Neo (t8140); confirm RESET reads back clear and keep it clear when clearing DEV_DISABLE. Ported from our U-Boot series.
+---
+ drivers/power/domain/apple-pmgr.c | 27 ++++++++++++++++++++++++---
+ 1 file changed, 24 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/power/domain/apple-pmgr.c b/drivers/power/domain/apple-pmgr.c
+index 5b651887..5be86026 100644
+--- a/drivers/power/domain/apple-pmgr.c
++++ b/drivers/power/domain/apple-pmgr.c
+@@ -9,6 +9,7 @@
+ #include <dm/device-internal.h>
+ #include <linux/err.h>
+ #include <linux/bitfield.h>
++#include <linux/delay.h>
+ #include <power-domain-uclass.h>
+ #include <reset-uclass.h>
+ #include <regmap.h>
+@@ -28,6 +29,7 @@
+ #define APPLE_PMGR_PS_PWRGATE	0x0
+ 
+ #define APPLE_PMGR_PS_SET_TIMEOUT_US	10000
++#define APPLE_PMGR_RESET_TIMEOUT_US	10000
+ 
+ struct apple_pmgr_priv {
+ 	struct regmap *regmap;
+@@ -60,11 +62,30 @@ static int apple_reset_assert(struct reset_ctl *reset_ctl)
+ static int apple_reset_deassert(struct reset_ctl *reset_ctl)
+ {
+ 	struct apple_pmgr_priv *priv = dev_get_priv(reset_ctl->dev->parent);
++	uint reg;
++	int i;
++
++	/*
++	 * Releasing RESET and DEV_DISABLE with back-to-back read-modify-writes
++	 * left ANS in reset on t8140 (MacBook Neo): the second read could still
++	 * see RESET and wrote it back. Confirm RESET reads back clear
++	 * (re-issuing it if needed), and keep it clear when clearing
++	 * DEV_DISABLE.
++	 */
++	for (i = 0; i < APPLE_PMGR_RESET_TIMEOUT_US; i++) {
++		regmap_update_bits(priv->regmap, priv->offset,
++				   APPLE_PMGR_FLAGS | APPLE_PMGR_RESET, 0);
++		regmap_read(priv->regmap, priv->offset, &reg);
++		if (!(reg & APPLE_PMGR_RESET))
++			break;
++		udelay(1);
++	}
++	if (reg & APPLE_PMGR_RESET)
++		return -ETIMEDOUT;
+ 
+ 	regmap_update_bits(priv->regmap, priv->offset,
+-			   APPLE_PMGR_FLAGS | APPLE_PMGR_RESET, 0);
+-	regmap_update_bits(priv->regmap, priv->offset,
+-			   APPLE_PMGR_FLAGS | APPLE_PMGR_DEV_DISABLE, 0);
++			   APPLE_PMGR_FLAGS | APPLE_PMGR_RESET |
++			   APPLE_PMGR_DEV_DISABLE, 0);
+ 
+ 	return 0;
+ }
+-- 
+2.47.3
+

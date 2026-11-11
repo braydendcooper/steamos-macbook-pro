@@ -1,0 +1,16 @@
+pkgname=triforce-lv2
+pkgver=0.3.2
+pkgrel=1
+pkgdesc='Triforce LV2 multiband compressor'
+arch=(aarch64)
+# 0.3.2's LICENCE.txt and SPDX headers declare GPL-2.0-or-later.
+# Asahi's PKGBUILD lists MIT, which does not match the source.
+license=('GPL-2.0-or-later')
+options=(!strip !debug)
+# Payload is built externally against Ubuntu 24.04 / glibc 2.39.
+source=()
+sha256sums=()
+
+package() {
+    cp -a "$startdir/stage/." "$pkgdir/"
+}

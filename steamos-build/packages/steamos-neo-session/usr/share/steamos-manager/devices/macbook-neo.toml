@@ -1,0 +1,5 @@
+[[device]]
+dt.compatible = "apple,j700"
+device = "macbook_neo"
+variant = "J700"
+friendly_name = "MacBook Neo"

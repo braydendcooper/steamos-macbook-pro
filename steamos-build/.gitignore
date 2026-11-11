@@ -1,0 +1,4 @@
+# Build outputs copied in by build-image.sh; never stored in the repo.
+__pycache__/
+packages/aurora-userpages/userpages
+packages/*/stage/

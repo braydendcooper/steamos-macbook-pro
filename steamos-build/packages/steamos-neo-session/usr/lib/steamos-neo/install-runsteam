@@ -1,0 +1,29 @@
+#!/bin/bash
+# Install the vendor launcher with selected standalone argument lines removed.
+set -euo pipefail
+
+source_script=/usr/share/deckard/RUNSTEAM.sh
+steam_dir="$HOME/.local/share/Steam"
+[[ -f "$source_script" ]] || { echo "Missing source: $source_script" >&2; exit 1; }
+[[ -d "$steam_dir" ]] || { echo "Missing Steam directory: $steam_dir" >&2; exit 1; }
+
+# An explicitly empty value keeps all arguments. Split on whitespace, without globbing.
+read -r -d '' -a drop_args <<< "${NEO_STEAM_DROP_ARGS--vrgamepadui -deckard}" || true
+
+tmp=$(mktemp "$steam_dir/.RUNSTEAM.sh.XXXXXX")
+trap 'rm -f -- "$tmp"' EXIT
+while IFS= read -r line || [[ -n "$line" ]]; do
+    stripped=${line//[[:space:]]/}
+    drop=0
+    for arg in "${drop_args[@]:-}"; do
+        if [[ -n "$arg" && "$stripped" == "$arg" ]]; then
+            drop=1
+            break
+        fi
+    done
+    if [[ "$drop" == 0 ]]; then
+        printf '%s\n' "$line"
+    fi
+done < "$source_script" > "$tmp"
+chmod 755 "$tmp"
+mv -f -- "$tmp" "$steam_dir/RUNSTEAM.sh"

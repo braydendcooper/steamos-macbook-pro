@@ -1,0 +1,10 @@
+#!/bin/bash
+
+if [[ "${NEO_STEAM_PAGE_SIZE:-}" == 4k ]]; then
+    if /usr/bin/aurora-userpages --status; then
+        exec /usr/bin/aurora-userpages 4k /usr/share/deckard/select_steam.sh RUNSTEAM.sh
+    fi
+    echo "run-steam: Aurora page-size selection unavailable: kernel not booted with user4k=on or aurora-userpages launcher missing. Valve's arm64 Steam client needs 4K pages; attempting native launch anyway." >&2
+fi
+
+exec /usr/share/deckard/select_steam.sh RUNSTEAM.sh

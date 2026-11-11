@@ -1,0 +1,106 @@
+#!/bin/sh
+
+neo_vendorfw_warn() {
+    printf 'neo-vendorfw: %s; continuing boot\n' "$*" >&2
+}
+
+run_hook() {
+    neo_vendorfw_ready=0
+    neo_vendorfw_uuid=
+    for neo_vendorfw_dt in \
+        /proc/device-tree/chosen/asahi,efi-system-partition \
+        /proc/device-tree/chosen/gravity,efi-system-partition; do
+        [ -r "$neo_vendorfw_dt" ] || continue
+        neo_vendorfw_uuid=$(busybox tr -d '\000' < "$neo_vendorfw_dt") || continue
+        [ -n "$neo_vendorfw_uuid" ] && break
+    done
+    if [ -z "$neo_vendorfw_uuid" ]; then
+        neo_vendorfw_warn 'no ESP PARTUUID in device tree; firmware unavailable'
+        return 0
+    fi
+
+    # Like asahi-scripts, bring up internal storage before udev coldplug.
+    # A missing module can mean it is built in; the bounded probe below is
+    # the actual availability check. devtmpfs supplies /dev nodes without udev.
+    modprobe apple-mailbox 2>/dev/null || :
+    modprobe nvme-apple 2>/dev/null || :
+    neo_vendorfw_dev=
+    neo_vendorfw_try=0
+    while [ "$neo_vendorfw_try" -lt 50 ]; do
+        # Disable the cache and scan devices, without /dev/disk/by-partuuid.
+        neo_vendorfw_dev=$(/usr/bin/blkid -c /dev/null \
+            -t "PARTUUID=$neo_vendorfw_uuid" -o device 2>/dev/null) || neo_vendorfw_dev=
+        [ -n "$neo_vendorfw_dev" ] && [ -b "$neo_vendorfw_dev" ] && break
+        neo_vendorfw_dev=
+        busybox sleep 0.1
+        neo_vendorfw_try=$((neo_vendorfw_try + 1))
+    done
+    if [ -z "$neo_vendorfw_dev" ]; then
+        neo_vendorfw_warn "ESP PARTUUID=$neo_vendorfw_uuid not found after 50 probes"
+        return 0
+    fi
+
+    neo_vendorfw_mnt=/run/neo-vendorfw-esp
+    neo_vendorfw_stage=/run/neo-vendorfw-stage
+    if ! busybox mkdir -p "$neo_vendorfw_mnt" /lib/firmware/vendor; then
+        neo_vendorfw_warn 'cannot create firmware staging directories'
+        return 0
+    fi
+    # Explicitly load FAT support; built-in modules need no action.
+    modprobe vfat 2>/dev/null || :
+    modprobe nls_cp437 2>/dev/null || :
+    modprobe nls_iso8859-1 2>/dev/null || :
+    # SteamOS's BusyBox has no mount applet; use util-linux like partsets.
+    if ! mount -t vfat -o ro "$neo_vendorfw_dev" "$neo_vendorfw_mnt"; then
+        neo_vendorfw_warn "cannot mount ESP $neo_vendorfw_dev read-only"
+        return 0
+    fi
+
+    if [ ! -r "$neo_vendorfw_mnt/vendorfw/firmware.cpio" ]; then
+        neo_vendorfw_warn 'ESP has no readable vendorfw/firmware.cpio'
+    elif ! busybox mkdir -p "$neo_vendorfw_stage"; then
+        neo_vendorfw_warn 'cannot create private firmware staging directory'
+    elif ! (cd "$neo_vendorfw_stage" &&
+        busybox cpio -idmu < "$neo_vendorfw_mnt/vendorfw/firmware.cpio"); then
+        neo_vendorfw_warn 'firmware.cpio extraction failed; firmware unavailable'
+    elif [ ! -d "$neo_vendorfw_stage/vendorfw" ]; then
+        neo_vendorfw_warn 'firmware.cpio has no vendorfw directory; firmware unavailable'
+    elif busybox cp -a "$neo_vendorfw_stage/vendorfw/." /lib/firmware/vendor/; then
+        neo_vendorfw_ready=1
+        printf 'neo-vendorfw: vendor firmware loaded into initramfs\n'
+    else
+        neo_vendorfw_warn 'cannot copy staged firmware; firmware may be incomplete'
+    fi
+
+    if ! rm -rf "$neo_vendorfw_stage"; then
+        neo_vendorfw_warn 'cannot remove private firmware staging directory'
+    fi
+
+    if ! busybox umount "$neo_vendorfw_mnt"; then
+        neo_vendorfw_warn "cannot unmount ESP at $neo_vendorfw_mnt"
+    fi
+    return 0
+}
+
+run_latehook() {
+    # The image supplies this mountpoint; never mkdir on the read-only root.
+    [ -d /new_root/usr/lib/firmware/vendor ] || return 0
+    [ "${neo_vendorfw_ready:-0}" = 1 ] || return 0
+
+    # Pages are allocated on demand, with a 128 MiB ceiling, not a reservation.
+    if ! mount -t tmpfs -o mode=0755,size=128M \
+        neo-vendorfw /new_root/usr/lib/firmware/vendor; then
+        neo_vendorfw_warn 'cannot mount firmware tmpfs on the real root'
+        return 0
+    fi
+    # '/.' includes hidden entries and also works with an empty directory.
+    if ! busybox cp -a /lib/firmware/vendor/. /new_root/usr/lib/firmware/vendor/; then
+        neo_vendorfw_warn 'cannot copy firmware to the real root; firmware may be incomplete'
+        if ! busybox umount /new_root/usr/lib/firmware/vendor; then
+            neo_vendorfw_warn 'cannot remove incomplete firmware tmpfs'
+        fi
+        return 0
+    fi
+    printf 'neo-vendorfw: vendor firmware available on the real root\n'
+    return 0
+}

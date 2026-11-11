@@ -1,0 +1,11 @@
+[General]
+count=1
+rules=neo-game-mode
+
+[neo-game-mode]
+Description=Neo Game Mode: gamescope fills the screen
+types=1
+fullscreen=true
+fullscreenrule=2
+noborder=true
+noborderrule=2
