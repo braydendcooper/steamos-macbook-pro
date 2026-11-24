@@ -2,9 +2,9 @@
 import os, os.path, plistlib, shutil, sys, stat, subprocess, urlcache, zipfile, logging, json, tempfile
 import osenum
 import tarfile
-from recovery import RecoveryImage, mounted_recovery
-from gravity_firmware.wifi import WiFiFWCollection
-from gravity_firmware.bluetooth import BluetoothFWCollection
+from recovery import RecoveryImage, PlainRecoveryImage, mounted_recovery
+from gravity_firmware.wifi import WiFiFWCollection, MACHINE_ALIASES as WIFI_PROFILES
+from gravity_firmware.bluetooth import BluetoothFWCollection, MACHINE_OUTPUTS as BT_PROFILES
 from gravity_firmware.radio_calibration import BluetoothCalibration, WiFiCalibration
 from gravity_firmware.multitouch import MultitouchFWCollection
 from gravity_firmware.kernel import KernelFWCollection
@@ -19,6 +19,36 @@ from util import *
 # rather than Broadcom. Aurora drivers require the validated, mapped Neo files.
 MEDIATEK_RADIO_MACHINES = {"j700"}
 MEDIATEK_WIFI_DIR = "System/Library/DriverExtensions/com.apple.AppleSunriseWLAN.dext/IZUBA"
+
+# Broadcom machines without a fixed output profile use the collectors' generic
+# (upstream Asahi) mode, which converts every board in recovery. The installer
+# still requires this machine's own chip and board among the results.
+GENERIC_RADIO_BOARDS = {
+    "j316s": ("4387", "apple,madagascar"),  # MacBook Pro (16-inch, M1 Pro)
+}
+
+def radio_files(wifi_source, bt_source, machine):
+    """Collect Broadcom Wi-Fi and Bluetooth firmware for machine.
+
+    Fails (before anything is written) if the machine is unknown or its
+    firmware is not in the source trees.
+    """
+    if machine in WIFI_PROFILES and machine in BT_PROFILES:
+        wifi = sorted(WiFiFWCollection(wifi_source, machine=machine).files())
+        bt = sorted(BluetoothFWCollection(bt_source, machine=machine).files())
+        return wifi, bt
+    if machine not in GENERIC_RADIO_BOARDS:
+        raise ValueError(f"No Wi-Fi/Bluetooth firmware profile for {machine}")
+    chip, board = GENERIC_RADIO_BOARDS[machine]
+    wifi = sorted(WiFiFWCollection(wifi_source).files())
+    bt = sorted(BluetoothFWCollection(bt_source).files())
+    if not any(name.startswith(f"brcm/brcmfmac{chip}") and f"-pcie.{board}" in name
+               and name.endswith(".bin") for name, _ in wifi):
+        raise ValueError(f"Recovery has no BCM{chip} Wi-Fi firmware for {board}")
+    if not any(name.startswith(f"brcm/brcmbt{chip}") and f"-{board}" in name
+               and name.endswith(".bin") for name, _ in bt):
+        raise ValueError(f"Recovery has no BCM{chip} Bluetooth firmware for {board}")
+    return wifi, bt
 
 def factory_data_filter(info):
     # Linux does not use per-device Touch ID sealing/trust records.
@@ -72,10 +102,11 @@ class StubInstaller(PackageInstaller):
             return
         identity = self.load_identity(prepare_paths=False)
         member = identity["Manifest"]["BaseSystem"]["Info"]["Path"]
-        if not member.endswith(".aea"):
-            return
-        p_progress("Decoding and validating recovery before partitioning...")
-        image = RecoveryImage(self.pkg, member, self.install_version)
+        p_progress("Validating recovery before partitioning...")
+        if member.endswith(".aea"):
+            image = RecoveryImage(self.pkg, member, self.install_version)
+        else:
+            image = PlainRecoveryImage(self.pkg, member)
         try:
             machine = identity["Info"]["DeviceClass"].removesuffix("ap")
             with mounted_recovery(image.path) as mount:
@@ -88,11 +119,9 @@ class StubInstaller(PackageInstaller):
                     # recovery lacks the MT7932 Bluetooth PTB.
                     neo_mt7932.collect('/', factory=FACTORY_DIR)
                 else:
-                    wifi = self.recovery_wifi_source(mount)
-                    # These collectors fail if the required M4 profile is incomplete.
-                    list(WiFiFWCollection(wifi, machine=machine).files())
-                    list(BluetoothFWCollection(str(mount / "usr/share/firmware/bluetooth"),
-                                               machine=machine).files())
+                    # Fails if this machine's radio firmware is incomplete.
+                    radio_files(self.recovery_wifi_source(mount),
+                                str(mount / "usr/share/firmware/bluetooth"), machine)
         except BaseException:
             image.close()
             raise
@@ -542,14 +571,11 @@ class StubInstaller(PackageInstaller):
             else:
                 wifi_source = self.recovery_wifi_source(recovery)
 
-                logging.info(f"Collecting WiFi firmware from {wifi_source}")
-                col = WiFiFWCollection(wifi_source, machine=machine)
-                pkg.add_files(sorted(col.files()))
-                logging.info("Collecting Bluetooth firmware")
-                col = BluetoothFWCollection(
-                    str(recovery / "usr/share/firmware/bluetooth"), machine=machine
-                )
-                pkg.add_files(sorted(col.files()))
+                logging.info(f"Collecting WiFi and Bluetooth firmware from {wifi_source}")
+                wifi_files, bt_files = radio_files(
+                    wifi_source, str(recovery / "usr/share/firmware/bluetooth"), machine)
+                pkg.add_files(wifi_files)
+                pkg.add_files(bt_files)
             logging.info("Collecting Multitouch firmware")
             col = MultitouchFWCollection("fud_firmware/")
             multitouch_files = sorted(col.files())

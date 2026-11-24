@@ -84,3 +84,29 @@ class RecoveryImage:
 
     def close(self):
         self.temporary.cleanup()
+
+
+class PlainRecoveryImage:
+    """An unencrypted BaseSystem DMG (macOS 13.x restore images).
+
+    Staged once so recovery firmware can be validated before partitioning and
+    the same bytes reused for the stub's recovery. zipfile checks each member's
+    CRC-32 while reading, and hdiutil verifies the DMG's own checksums.
+    """
+    def __init__(self, package, member):
+        size = package.getinfo(member).file_size
+        if shutil.disk_usage(tempfile.gettempdir()).free < size + 1024**3:
+            raise RuntimeError(f"Need at least {(size >> 30) + 1} GiB temporary space to stage recovery")
+        self.temporary = tempfile.TemporaryDirectory(prefix="gravity-recovery-")
+        try:
+            self.path = Path(self.temporary.name) / "BaseSystem.dmg"
+            with package.open(member) as source, self.path.open("xb") as out:
+                shutil.copyfileobj(source, out, length=1024 * 1024)
+            self.crc = file_checksums(self.path)[1]
+            subprocess.run(["/usr/bin/hdiutil", "verify", str(self.path)], check=True)
+        except BaseException:
+            self.close()
+            raise
+
+    def close(self):
+        self.temporary.cleanup()

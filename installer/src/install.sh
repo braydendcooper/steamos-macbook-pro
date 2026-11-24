@@ -30,15 +30,15 @@ if [ "$res" -ne 0 ] || [ -z "$macos_ver" ]; then
     exit 1
 fi
 
-if [ "${macos_ver%%.*}" -lt 12 ]; then
-    echo "This installer requires macOS 26.6.2 or later."
+if [ "${macos_ver%%.*}" -lt 26 ]; then
+    echo "This installer requires macOS 26.5 or later."
     exit 1
 fi
 
 if ! arch -arm64 ls >/dev/null 2>/dev/null; then
     echo
     echo "Looks like this is an Intel Mac!"
-    echo "This installer supports the MacBook Neo (j700ap) and M4 Mac mini (j773gap)."
+    echo "This installer supports the 16-inch MacBook Pro with M1 Pro (j316sap)."
     echo "May we interest you in https://t2linux.org/ instead?"
     exit 1
 fi

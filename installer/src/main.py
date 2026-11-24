@@ -9,9 +9,9 @@ from util import *
 
 PART_ALIGN = psize("1MiB")
 
-# A macOS 26.6.2 stub uses ~2.5GB (1.94GB recoveryOS, 290MB restore files, 282MB personalized
-# boot set). Re-running step 2 for an m1n1 upgrade personalized a second boot set next to the
-# first, and in a 2.5GB stub bputil failed with ENOSPC (seen on a MacBook Neo).
+# A macOS stub uses ~2.5GB (recoveryOS, restore files, personalized boot set). Re-running
+# step 2 for an m1n1 upgrade personalizes a second boot set next to the first, and in a 2.5GB
+# stub bputil failed with ENOSPC (seen on a MacBook Neo with a 26.6.2 stub), so keep 4GB.
 STUB_SIZE = align_down(psize("4GB"), PART_ALIGN)
 
 # Minimum free space to leave when resizing, to allow for OS upgrades
@@ -23,6 +23,7 @@ MIN_FREE = psize("1GB")
 MIN_INSTALL_FREE = psize("10GB")
 
 MIN_MACOS_VERSION = "26.5"
+MIN_MACOS_VERSION_EXPERT = MIN_MACOS_VERSION
 
 @dataclass
 class IPSW:
@@ -40,19 +41,18 @@ class Device:
     expert_only: bool
 
 CHIP_MIN_VER = {
-    0x8132: "26.6.2",  # T8132, M4
-    0x8140: "26.6.2",  # T8140, A18 Pro
+    # Linux's M1-family (G13) GPU driver only accepts 12.3 or 13.5 firmware.
+    0x6000: "13.5",  # T6000, M1 Pro
 }
 DEVICES = {
-    "j773gap": Device("26.6.2", False),  # Mac mini (M4, 2024)
-    "j700ap":  Device("26.6.2", False),  # MacBook Neo (A18 Pro, 2026)
+    "j316sap": Device("13.5", False),  # MacBook Pro (16-inch, M1 Pro, 2021)
 }
 
 IPSW_VERSIONS = [
-    # Keep this entry current with an Apple-signed restore image for Mac16,10
-    # and Mac17,5 (UniversalMac 26.6.2 / 25G83 carries the j700ap identity).
-    IPSW("26.6.2", "26.5", "0", "0", False, ["j773gap", "j700ap"],
-         "https://updates.cdn-apple.com/2026SummerFCS/fullrestores/140-75212/A2A24B94-1FC1-45A3-93F7-C51B02AF1F4D/UniversalMac_26.6.2_25G83_Restore.ipsw"),
+    # Same 13.5 entry as the upstream Asahi Linux installer. The M1 Pro's GPU
+    # and display drivers support this firmware; 26.x firmware is not supported.
+    IPSW("13.5", "13.0", "iBoot-8422.141.2", "22.7.74.0.0,0", False, ["j316sap"],
+         "https://updates.cdn-apple.com/2023SummerFCS/fullrestores/032-69606/D3E05CDF-E105-434C-A4A1-4E3DC7668DD0/UniversalMac_13.5_22G74_Restore.ipsw"),
 ]
 
 class InstallerMain:
@@ -530,6 +530,11 @@ class InstallerMain:
 
         minver.sort(key=lambda ipsw: split_ver(ipsw.version))
 
+        if not minver:
+            p_error("This OS does not support any macOS firmware version this installer")
+            p_error(f"can use on this Mac (OS supports: {', '.join(supported_fw or [])}).")
+            sys.exit(1)
+
         if not avail:
             p_error("Your system firmware is too old.")
             p_error(f"Please upgrade to macOS {minver[0].version} or newer.")
@@ -897,7 +902,7 @@ class InstallerMain:
         self.device = DEVICES.get(self.sysinfo.device_class, None)
         if not self.chip_min_ver or not self.device or (self.device.expert_only and not self.expert):
             p_error("This device is not supported yet!")
-            p_error("This installer supports the MacBook Neo (j700ap) and M4 Mac mini (j773gap).")
+            p_error("This installer supports the 16-inch MacBook Pro with M1 Pro (j316sap).")
             if DISTRO_DOCS:
                 print()
                 p_error(f"   {DISTRO_DOCS}")

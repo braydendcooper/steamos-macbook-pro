@@ -1,12 +1,12 @@
 {
   "os_list": [
     {
-      "name": "SteamOS for MacBook Neo (unofficial, experimental)",
+      "name": "SteamOS for M1 Pro MacBook Pro (unofficial, experimental)",
       "default_os_name": "SteamOS",
       "boot_object": "m1n1.bin",
       "next_object": "m1n1/boot.bin",
-      "package": "steamos-neo.zip",
-      "supported_fw": ["26.6.2"],
+      "package": "steamos-j316s.zip",
+      "supported_fw": ["13.5"],
       "extras": [],
       "partitions": [
         {

@@ -13,6 +13,8 @@ MACHINE_FILES = {
     "j773g": (),
     # MacBook Neo (A18 Pro): no bundled open firmware yet.
     "j700": (),
+    # MacBook Pro (16-inch, M1 Pro): no bundled open firmware needed.
+    "j316s": (),
 }
 
 

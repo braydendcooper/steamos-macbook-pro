@@ -1,5 +1,5 @@
 #!/bin/sh
-# MacBook Neo installer bootstrap. Run on the Neo: sh install.sh [server URL]
+# M1 Pro MacBook Pro installer bootstrap. Run on the Mac: sh install.sh [server URL]
 # Downloads the installer and its metadata from your own install server (see README.md).
 if true; then
     set -e
@@ -11,7 +11,7 @@ if true; then
     export LANG=en_US.UTF-8
     export PATH="/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
     if ! curl --no-progress-meter file:/// >/dev/null 2>&1; then
-        echo "Your version of cURL is too old. Installing requires at least macOS 26.6.2."
+        echo "Your version of cURL is too old. Installing requires at least macOS 26.5."
         exit 1
     fi
     if [ "$#" -gt 0 ]; then
@@ -57,7 +57,7 @@ if true; then
             esac
             ;;
     esac
-    export DISTRO="SteamOS for MacBook Neo (unofficial)"
+    export DISTRO="SteamOS for M1 Pro MacBook Pro (unofficial)"
     export VERSION_FLAG=$SERVER/installer/latest
     export INSTALLER_BASE=$SERVER/installer
     export INSTALLER_DATA=$SERVER/installer/installer_data.json
