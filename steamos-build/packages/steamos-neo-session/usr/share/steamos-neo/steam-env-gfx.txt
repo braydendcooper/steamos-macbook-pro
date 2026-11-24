@@ -1,6 +1,6 @@
-# MacBook Neo defaults for games, appended to Valve's gfx.txt at Steam start.
-# Proton's Direct3D-over-Vulkan (DXVK) does not render correctly on the A18
-# Pro's new Vulkan driver yet; WineD3D (Direct3D 9-11 over OpenGL) does.
-# Undo per game with the launch option PROTON_USE_WINED3D=0 %command%, or for
-# all games with PROTON_USE_WINED3D=0 in ~/.config/steam/env/gfx.txt.
-PROTON_USE_WINED3D=1
+# Game defaults, appended to Valve's gfx.txt at Steam start.
+# The M1 Pro's Vulkan driver (Honeykrisp) runs Proton's DXVK and vkd3d-proton,
+# so Proton's defaults apply. If a game renders wrongly, try WineD3D
+# (Direct3D 9-11 over OpenGL) with the launch option
+# PROTON_USE_WINED3D=1 %command%, or for all games uncomment the line below.
+#PROTON_USE_WINED3D=1

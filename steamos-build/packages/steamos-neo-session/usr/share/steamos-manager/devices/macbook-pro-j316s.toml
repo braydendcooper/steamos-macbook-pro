@@ -1,0 +1,5 @@
+[[device]]
+dt.compatible = "apple,j316s"
+device = "macbook_pro_m1_pro"
+variant = "J316s"
+friendly_name = "MacBook Pro (16-inch, M1 Pro)"

@@ -1,11 +1,12 @@
 #!/bin/bash
-# Build the SteamOS-for-MacBook-Neo slot images from Valve's SteamOS 0.4.5
+# Build the SteamOS slot images for the 16-inch M1 Pro MacBook Pro (J316s) from Valve's SteamOS 0.4.5
 # rootfs (10 GiB btrfs), Steam Frame 0.3.0 var/home, Omarchy's Aurora kernel
 # and Mesa, and the Neo vendor firmware hooks. Inputs below are overridable
 # environment variables. Runs as root in a privileged aarch64 Debian container
 # with the build volume at /src and the checkout containing steamos-build/
 # at /work.
-# NEO_DEBUG_SHELL=1 adds a root shell on the USB-C debug UART (development only).
+# NEO_DEBUG_SHELL=1 adds a root shell on tty9, Ctrl+Alt+F9 (development only).
+# NEO_AUDIO=1 installs the MacBook Neo audio stack (not for the M1 Pro yet).
 #
 # Outputs in $OUT:
 #   rootfs.img   btrfs root filesystem (0.4.5, Aurora kernel/Mesa, firmware hook)
@@ -26,6 +27,10 @@ AUDIO_TAR=${AUDIO_TAR:-/src/aurora/audio-out/aurora-audio-steamos-aarch64.tar.zs
 HOOK_DIR=${HOOK_DIR:-/work/steamos-build/initcpio}
 OUT=${OUT:-/src/steamos/neo-image}
 NEO_DEBUG_SHELL=${NEO_DEBUG_SHELL:-0}
+# Audio is off on the M1 Pro until its speaker protection (asahi-audio +
+# speakersafetyd) is ported. NEO_AUDIO=1 installs the MacBook Neo audio stack
+# from AUDIO_TAR; the machine driver stays blacklisted either way.
+NEO_AUDIO=${NEO_AUDIO:-0}
 KNAME=linux-neo
 BUILD=/work/steamos-build
 
@@ -47,6 +52,8 @@ FRAME_UNIT_FILES=(
 
 # Replace the Frame's VR session with our per-device flat session package.
 NEO_REPLACES=(deckard-steamvr-session)
+# Package directories in packages/ that are always built and installed.
+SESSION_PACKAGES=(steamos-neo-session aurora-userpages)
 AUDIO_PACKAGES=(
     speakerguardd aurora-audio alsa-ucm-conf-aurora
     bankstown-lv2 triforce-lv2 lsp-plugins-lv2
@@ -63,7 +70,16 @@ trap cleanup EXIT
 [[ "$NEO_DEBUG_SHELL" == 0 || "$NEO_DEBUG_SHELL" == 1 ]] || {
     echo "NEO_DEBUG_SHELL must be 0 or 1" >&2; exit 1;
 }
-for input in "$ROOTFS_SRC" "$SRC" "$KERNEL_IMAGE" "$USERPAGES_BIN" "$MESA_TAR" "$AUDIO_TAR" \
+[[ "$NEO_AUDIO" == 0 || "$NEO_AUDIO" == 1 ]] || {
+    echo "NEO_AUDIO must be 0 or 1" >&2; exit 1;
+}
+build_packages=("${SESSION_PACKAGES[@]}")
+audio_inputs=()
+if [[ "$NEO_AUDIO" == 1 ]]; then
+    build_packages+=("${AUDIO_PACKAGES[@]}")
+    audio_inputs=("$AUDIO_TAR")
+fi
+for input in "$ROOTFS_SRC" "$SRC" "$KERNEL_IMAGE" "$USERPAGES_BIN" "$MESA_TAR" "${audio_inputs[@]}" \
              "$HOOK_DIR/install/neo-vendorfw" "$HOOK_DIR/hooks/neo-vendorfw" \
              "$BUILD/grub.cfg" "$BUILD/kernelsetup.sh"; do
     [[ -f "$input" && -r "$input" ]] || { echo "Missing or unreadable input: $input" >&2; exit 1; }
@@ -206,18 +222,14 @@ unset neo_hooks neo_has_base hook
 EOF
 
 mkdir -p "$mnt/etc/modprobe.d"
-# Keep the machine driver blacklisted pending on-device speaker protection
-# validation; override this file from /etc on the device to validate. Remove
-# this block once validated.
-# speakerguardd is installed and its udev rule starts it when the speaker card
-# appears.
+# Keep the machine driver blacklisted until speaker protection is installed and
+# validated on the device; override this file from /etc on the device to test.
+# On the M1 Pro this driver also runs the headphone jack, so there is no audio.
 cat > "$mnt/etc/modprobe.d/neo-no-speakers.conf" <<'EOF'
-# The speaker protection stack is installed. speakerguardd is installed and its
-# udev rule starts it when the speaker card appears. The machine driver stays
-# blacklisted until on-device validation confirms
-# speakerguardd takes the kernel lease and 'Speaker volumes unlocked' in dmesg.
-# The kernel already holds the speakers 20 dB down until a daemon holds the lease.
-# To validate, override this file from /etc on the device. Remove the generating
+# No audio until speaker protection (speakersafetyd on the M1 Pro) is installed
+# and validated: without it the speakers can be damaged at high volume. The
+# kernel holds the speakers 20 dB down until a protection daemon takes over.
+# To test, override this file from /etc on the device. Remove the generating
 # block in build-image.sh once validated.
 blacklist snd_soc_macaudio
 EOF
@@ -279,24 +291,25 @@ builder_gid=$(chroot "$mnt" id -g nobody) || {
 }
 mount -t tmpfs tmpfs "$mnt/tmp"
 mkdir -p "$mnt/tmp/neo-build/out" "$mnt/tmp/neo-build/cache"
-for package_dir in "$BUILD"/packages/*/; do
-    cp -a "$package_dir" "$mnt/tmp/neo-build/"
+for package_name in "${build_packages[@]}"; do
+    cp -a "$BUILD/packages/$package_name" "$mnt/tmp/neo-build/"
 done
 cp "$USERPAGES_BIN" "$mnt/tmp/neo-build/aurora-userpages/userpages"
-# Unpack into tmpfs, then give each PKGBUILD only its own DESTDIR payload.
-audio_extract=$(mktemp -d "$mnt/tmp/neo-audio.XXXXXXXX")
-tar --zstd -xpf "$AUDIO_TAR" -C "$audio_extract"
-for package_name in "${AUDIO_PACKAGES[@]}"; do
-    [[ -d "$audio_extract/stage/$package_name/usr" ]] || {
-        echo "Audio archive missing stage/$package_name/usr" >&2; exit 1;
-    }
-    mkdir -p "$mnt/tmp/neo-build/$package_name/stage"
-    cp -a "$audio_extract/stage/$package_name/." "$mnt/tmp/neo-build/$package_name/stage/"
-done
-rm -rf -- "$audio_extract"
+if [[ "$NEO_AUDIO" == 1 ]]; then
+    # Unpack into tmpfs, then give each PKGBUILD only its own DESTDIR payload.
+    audio_extract=$(mktemp -d "$mnt/tmp/neo-audio.XXXXXXXX")
+    tar --zstd -xpf "$AUDIO_TAR" -C "$audio_extract"
+    for package_name in "${AUDIO_PACKAGES[@]}"; do
+        [[ -d "$audio_extract/stage/$package_name/usr" ]] || {
+            echo "Audio archive missing stage/$package_name/usr" >&2; exit 1;
+        }
+        mkdir -p "$mnt/tmp/neo-build/$package_name/stage"
+        cp -a "$audio_extract/stage/$package_name/." "$mnt/tmp/neo-build/$package_name/stage/"
+    done
+    rm -rf -- "$audio_extract"
+fi
 chown -R "$builder_uid:$builder_gid" "$mnt/tmp/neo-build"
-for package_dir in "$BUILD"/packages/*/; do
-    package_name=$(basename "$package_dir")
+for package_name in "${build_packages[@]}"; do
     chroot --userspec="$builder_uid:$builder_gid" "$mnt" env HOME=/tmp/neo-build \
         PKGDEST=/tmp/neo-build/out bash -c \
         'cd "/tmp/neo-build/$1" && makepkg --nodeps --noconfirm --cleanbuild' \
@@ -311,7 +324,8 @@ done
 # and the image's existing pipewire-audio and wireplumber packages.
 chroot "$mnt" bash -c \
     'pacman -U --noconfirm --logfile /dev/null --cachedir /tmp/neo-build/cache /tmp/neo-build/out/*.pkg.tar.zst'
-chroot "$mnt" pacman -Q "${AUDIO_PACKAGES[@]}"
+chroot "$mnt" pacman -Q "${build_packages[@]}"
+if [[ "$NEO_AUDIO" == 1 ]]; then
 # speakerguardd is not enabled at boot while snd_soc_macaudio is blacklisted
 # (neo-no-speakers.conf above): with no card it waited 30 s, failed and
 # restarted indefinitely, because its restart limit (5 in 60 s) never trips.
@@ -348,6 +362,7 @@ while IFS= read -r -d '' elf; do
 done < <(find /usr/bin/speakerguardd "${bundles[@]}" -type f -print0)
 [[ "$elf_count" -ge 4 ]] || { echo "Expected daemon and LV2 ELF files" >&2; exit 1; }
 AUDIO_LDD
+fi
 # Consume the full output so head cannot cause SIGPIPE under pipefail.
 chroot "$mnt" pacman -Qi steamos-neo-session | { head; cat >/dev/null; }
 chroot "$mnt" pacman -Qo /usr/lib/steamos/gamescope-session
@@ -374,11 +389,11 @@ install -D -m 644 "$mnt/tmp/grubaa64.efi" "$mnt/usr/lib/steamos-neo/boot/grubaa6
 grub_cfg="$OUT/grub.cfg"
 cp "$BUILD/grub.cfg" "$grub_cfg"
 if [[ "$NEO_DEBUG_SHELL" == 1 ]]; then
-    sed -i '/^linux /s|$| systemd.debug_shell=/dev/ttySAC0|' "$grub_cfg"
-    grep -q '^linux .* systemd.debug_shell=/dev/ttySAC0$' "$grub_cfg" || {
+    sed -i '/^linux /s|$| systemd.debug_shell=/dev/tty9|' "$grub_cfg"
+    grep -q '^linux .* systemd.debug_shell=/dev/tty9$' "$grub_cfg" || {
         echo "Failed to enable the debug shell in $grub_cfg" >&2; exit 1;
     }
-    echo "== DEBUG BUILD: root shell on the USB-C debug UART (ttySAC0)"
+    echo "== DEBUG BUILD: root shell on the screen's tty9 (Ctrl+Alt+F9)"
 elif grep -q '^[^#]*debug_shell' "$grub_cfg"; then
     echo "Release GRUB config contains debug_shell: $grub_cfg" >&2; exit 1;
 fi

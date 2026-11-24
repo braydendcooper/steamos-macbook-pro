@@ -11,9 +11,9 @@
                 "highDynamicRange": false,
                 "iccProfilePath": "",
                 "mode": {
-                    "height": 1506,
-                    "refreshRate": 59982,
-                    "width": 2408
+                    "height": 2160,
+                    "refreshRate": 60000,
+                    "width": 3456
                 },
                 "overscan": 0,
                 "rgbRange": "Automatic",
