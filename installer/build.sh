@@ -122,7 +122,8 @@ fi
 
 echo "Copying files..."
 
-cp -r "$SRC"/* "$PACKAGE/"
+# -P keeps src/gravity_firmware a symlink; macOS cp -r would follow it.
+cp -RP "$SRC"/* "$PACKAGE/"
 rm -f "$PACKAGE/gravity_firmware"
 cp -r "$FIRMWARE_TOOLS" "$PACKAGE/"
 if [ "$HAVE_ARTWORK" = 1 ]; then
@@ -153,9 +154,18 @@ echo "Extracting Python framework..."
 
 mkdir -p "$PACKAGE/Frameworks/Python.framework"
 
+if [ "$(uname)" = Darwin ]; then
+    # macOS: bsdtar mangles xar member names and cpio has no -D, so expand the
+    # flat package with pkgutil and unpack the payload in place.
+    PKG_EXPANDED="$DL/python-pkg-expanded"
+    rm -rf "$PKG_EXPANDED"
+    pkgutil --expand "$DL/$PYTHON_PKG" "$PKG_EXPANDED"
+    (cd "$PACKAGE/Frameworks/Python.framework" &&
+        gzip -dc "$PKG_EXPANDED/Python_Framework.pkg/Payload" | cpio -i --quiet)
+    rm -rf "$PKG_EXPANDED"
 # test if libarchive's bsdtar is capable of extracting the payload
 # libarchive 3.7.2 (Ubuntu 24.04) is broken while 3.8.5 (Ubuntu 26.04) works
-if $(bsdtar -tf "$DL/$PYTHON_PKG" Python_Framework.pkg/Payload > /dev/null); then
+elif $(bsdtar -tf "$DL/$PYTHON_PKG" Python_Framework.pkg/Payload > /dev/null); then
     bsdtar -xOf "$DL/$PYTHON_PKG" Python_Framework.pkg/Payload | zcat | \
         cpio -i -D "$PACKAGE/Frameworks/Python.framework"
 else

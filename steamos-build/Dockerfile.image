@@ -1,0 +1,21 @@
+# Host tools for build-image.sh and package.py. Everything else (pacman,
+# makepkg, mkinitcpio, GRUB, steamos-bootconf) runs from the SteamOS rootfs
+# through chroot. Run privileged (loop mounts), with the build volume at /src
+# and this checkout at /work, from the repository root:
+#   docker build --platform linux/arm64 -f steamos-build/Dockerfile.image \
+#     -t steamos-image-build:local steamos-build
+#   docker run --rm --privileged --platform linux/arm64 \
+#     --mount type=volume,source=steamos-build,target=/src -v "$PWD:/work:ro" \
+#     -e KERNEL_IMAGE=/src/aurora/kernel-out/Image \
+#     -e USERPAGES_BIN=/src/aurora/kernel-out/userpages \
+#     -e MODULES_ROOT=/src/aurora/kernel-out/modules-staging/lib/modules \
+#     -e OUT=/src/steamos/j316s-image \
+#     steamos-image-build:local bash /work/steamos-build/build-image.sh
+FROM debian:trixie
+
+ARG DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      gdisk btrfs-progs zstd tar util-linux mount coreutils findutils \
+      python3 ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+CMD ["bash"]
