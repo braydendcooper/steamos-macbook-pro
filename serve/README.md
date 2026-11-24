@@ -1,22 +1,22 @@
 # Install server
 
-The Neo installer (in `installer/` of the public repository) downloads itself
+The installer (in `installer/` of this repository) downloads itself
 and the OS package from a server you run yourself. Nothing is downloaded from
 any project server. The simplest and safest setup is to copy your build onto the
-Neo and run the server there, in macOS, on `127.0.0.1`.
+Mac and run the server there, in macOS, on `127.0.0.1`.
 
 ## Served directory layout
 
 ```
 <root>/
-  installer/latest                         one line: the installer version, e.g. neo-1
+  installer/latest                         one line: the installer version, e.g. j316s-1
   installer/installer-<version>.tar.gz     built with the installer's build.sh
   installer/installer_data.json            from installer_data.example.json
   os/<package>.zip                         your image, packaged with steamos-build/package.py
 ```
 
 1. Build the SteamOS image with `steamos-build/build-image.sh`, then package it:
-   `python3 steamos-build/package.py <build output dir> <ESP boot.bin> <root>/os/steamos-neo.zip`.
+   `python3 steamos-build/package.py <build output dir> <ESP boot.bin> <root>/os/steamos-j316s.zip`.
    `<ESP boot.bin>` is your m1n1 stage 2 + device tree + U-Boot payload.
 2. Build the installer with its `build.sh`, supplying `M1N1_STAGE1` (your m1n1
    stage 1 build) and `LOGO` (any `.icns` icon). Copy
@@ -31,13 +31,13 @@ Neo and run the server there, in macOS, on `127.0.0.1`.
 
 ## Installing
 
-On the MacBook Neo, in macOS, with everything backed up:
+On the M1 Pro MacBook Pro, in macOS, with everything backed up:
 
 ```sh
 sh install.sh
 ```
 
-This uses the server on the Neo itself (`http://127.0.0.1:8000`). To use a
+This uses the server on the Mac itself (`http://127.0.0.1:8000`). To use a
 server elsewhere, pass its address: `https://` is required, because the
 installer runs with administrator rights and a plain-HTTP download could be
 tampered with by any device on the network. If you trust every device on your
@@ -51,7 +51,7 @@ the installer explains.
 ## Removing
 
 `remove-steamos.sh` removes one SteamOS install and its macOS stub volume. Run it
-in macOS on the Neo as your normal user (it asks for your password through sudo),
+in macOS on the Mac as your normal user (it asks for your password through sudo),
 first with `DRY_RUN=1` to see what it would delete:
 
 ```sh

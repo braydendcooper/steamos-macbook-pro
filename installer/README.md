@@ -1,13 +1,13 @@
-# MacBook Neo installer
+# M1 Pro MacBook Pro installer
 
-Installs SteamOS for the MacBook Neo (`j700ap`, A18 Pro) next to macOS. It is a
+Installs SteamOS for the 16-inch M1 Pro MacBook Pro (`j316sap`) next to macOS. It is a
 fork of the Gravity Linux installer, which is itself derived from the
 [Asahi Linux](https://asahilinux.org) installer; all credit for the installer's
 design and most of its code goes to those projects (see `LICENSE`).
 
-What it does, run from macOS on the Neo:
+What it does, run from macOS on that Mac:
 
-- creates a small macOS "stub" install (macOS 26.6.2 firmware) that the Mac's
+- creates a small macOS "stub" install (macOS 13.5 firmware) that the Mac's
   boot picker uses to start Linux, and installs the m1n1 boot loader into it
   (finished in recoveryOS, as the installer explains);
 - creates the partitions described by `installer_data.json`, including SteamOS's

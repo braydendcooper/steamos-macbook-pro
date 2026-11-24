@@ -1,5 +1,5 @@
 #!/bin/sh
-# Remove one complete SteamOS for MacBook Neo install, identified by its EFI
+# Remove one complete SteamOS (M1 Pro MacBook Pro) install, identified by its EFI
 # partsets/all files, and its small APFS stub. Resolve UUIDs again before every
 # deletion: disk0sN names change as partitions go. DRY_RUN=1 only checks.
 set -e
