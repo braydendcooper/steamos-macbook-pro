@@ -1,0 +1,25 @@
+# Kernel, m1n1 and U-Boot for the 16-inch M1 Pro, built natively on arm64.
+# Toolchains follow Omarchy's linux-aurora, m1n1-aurora and uboot-aurora
+# recipes (omarchy-pkgs 0d01c62): LLVM 18 and Rust 1.85 for the kernel (Rust
+# 1.99 only for rustfmt, which bindgen needs), Rust 1.89 for m1n1.
+FROM ubuntu:24.04
+
+ARG DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      build-essential bc bison flex cpio kmod rsync xz-utils zstd gzip \
+      libelf-dev libssl-dev libgnutls28-dev uuid-dev dwarves \
+      clang-18 lld-18 llvm-18 libclang-18-dev \
+      device-tree-compiler swig python3 python3-dev python3-pyelftools \
+      python3-setuptools git curl ca-certificates patch \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV RUSTUP_HOME=/opt/rustup CARGO_HOME=/opt/cargo PATH=/opt/cargo/bin:$PATH
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+      | sh -s -- -y --no-modify-path --profile minimal --default-toolchain none \
+    && rustup toolchain install 1.85.0 --profile minimal --component rust-src \
+    && rustup toolchain install 1.99.0 --profile minimal --component rustfmt \
+    && rustup toolchain install 1.89.0 --profile minimal --target aarch64-unknown-none-softfloat \
+    && chmod -R a+rwX /opt/cargo /opt/rustup
+
+WORKDIR /src/aurora
+CMD ["bash"]

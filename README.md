@@ -100,7 +100,8 @@ a container on an Apple Silicon Mac) and:
 
 1. Aurora's kernel (`omacom/linux-aurora`), m1n1 (`omacom/m1n1`) and U-Boot
    (`aurora-silicon/u-boot`) with the patches in `patches/` applied, and the kernel
-   configured with Omarchy's configuration plus `kconfig/steamos-neo.config`.
+   configured with Omarchy's configuration plus `kconfig/steamos-neo.config`:
+   `steamos-build/boot-chain/` does all of this in a container.
 2. Aurora's Mesa, built against SteamOS's glibc with `steamos-build/mesa/`.
    (`steamos-build/audio/` builds the Neo audio stack, which the M1 Pro does not
    use yet.)
