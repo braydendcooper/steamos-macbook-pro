@@ -1,7 +1,7 @@
 pkgname=steamos-neo-session
 pkgver=1
-pkgrel=8
-pkgdesc='Flat Gamescope and Plasma sessions for MacBook Neo'
+pkgrel=9
+pkgdesc='Flat Gamescope and Plasma sessions for the M1 Pro MacBook Pro'
 arch=(any)
 license=(MIT BSD-2-Clause)
 options=(!strip !debug)

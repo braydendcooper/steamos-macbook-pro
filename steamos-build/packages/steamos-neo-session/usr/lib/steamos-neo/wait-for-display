@@ -1,0 +1,17 @@
+#!/bin/sh
+# Run by sddm.service (ExecStartPre) before autologin. m1n1 hands Linux a boot
+# framebuffer (simpledrm) that the Apple display driver replaces about a second
+# into boot. Game Mode's KWin started on simpledrm, lost its output when
+# apple-drm took over, and gamescope then failed (vulkan_make_output). Wait up
+# to 20 s for apple-drm's internal panel (connector type eDP; simpledrm's is
+# "Unknown"). Never fails, so a missing panel cannot block the login.
+i=0
+while [ $i -lt 100 ]; do
+    for s in /sys/class/drm/card*-eDP-*/status; do
+        [ -r "$s" ] && [ "$(cat "$s")" = connected ] && exit 0
+    done
+    sleep 0.2
+    i=$((i + 1))
+done
+echo "wait-for-display: no connected eDP panel after 20 s; starting anyway" >&2
+exit 0

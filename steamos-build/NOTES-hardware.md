@@ -21,6 +21,28 @@ From the sources (linux-aurora 0428c9a, m1n1 ba130ff), not yet verified on the d
 - No SME, so `arm64.nosme` does nothing here; `user4k=on` needs the CPU's 4K
   translation granule, which M1 cores have.
 
+Verified on the M1 Pro (first install, 2026-11):
+
+- The 13.5 stub boots m1n1 → U-Boot → steamcl → GRUB → kernel → SteamOS, and
+  Game Mode, Desktop Mode, Steam and Wi-Fi work.
+- Native Vulkan works: gamescope selects "Apple M1 Pro (G13S C0)" (Honeykrisp).
+- The internal panel comes up on apple-drm at 3456x2160 (below the notch), 120 Hz.
+- Boot race: m1n1's boot framebuffer (simpledrm) is replaced by apple-drm about
+  a second into boot. Autologin straight into Game Mode started KWin on
+  simpledrm; when apple-drm took over, gamescope failed
+  (`vkGetPhysicalDeviceSurfaceCapabilitiesKHR`, `vulkan_make_output failed`),
+  Valve's health check fell back to Desktop Mode, or SDDM gave up (2 starts in
+  30 s) leaving a text console. `sddm.service` now waits for apple-drm's eDP
+  panel (`wait-for-display`), which fixed it.
+- x86_64 Linux games (Steam Linux Runtime under FEX) get graphics from
+  `/usr/share/guestos/fex-mesa`, Valve's x86 Mesa for the Steam Frame: only
+  Freedreno Vulkan and no Apple GL driver, so they find no Vulkan GPU (BeamNG's
+  native Linux build). The same game's Windows build through Proton runs on the
+  native Mesa and loads a level, with rendering artifacts.
+- SDDM reads `/etc/sddm.conf.d` in name order: steamos-manager's default is
+  `zz-steamos-autologin.conf` and "Return to Gaming Mode" writes a one-time
+  `zzt-steamos-temp-login.conf`, so a local override must sort between them.
+
 To verify on the first boots: the 13.5 stub boots m1n1; display mode and refresh
 rates DRM offers (60 Hz is configured); whether `KWIN_DRM_NO_DIRECT_SCANOUT=1`
 is still needed; Wi-Fi/Bluetooth; the `4K userspace translation granule` boot
